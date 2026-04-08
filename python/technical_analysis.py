@@ -728,18 +728,24 @@ def generate_recommendation(data):
 
     # --- Target Price & Stop Loss ---
     if action == "BUY":
-        target = round(min(resistance, fib.get("0.236", resistance)), 2)
-        if target <= price:
-            target = round(price * 1.05, 2)
+        fib_target = fib.get("0.236", resistance)
+        target = round(max(fib_target, resistance), 2)
+        if target <= price * 1.01:
+            target = round(price * 1.06, 2)
         stop = round(max(support, price - 2 * atr), 2)
+        if stop >= price:
+            stop = round(price * 0.95, 2)
     elif action == "SELL":
-        target = round(max(support, fib.get("0.618", support)), 2)
-        if target >= price:
-            target = round(price * 0.95, 2)
+        fib_target = fib.get("0.618", support)
+        target = round(min(fib_target, support), 2)
+        if target >= price * 0.99:
+            target = round(price * 0.94, 2)
         stop = round(min(resistance, price + 2 * atr), 2)
+        if stop <= price:
+            stop = round(price * 1.05, 2)
     else:
-        target = round(resistance, 2)
-        stop = round(support, 2)
+        target = round(resistance, 2) if resistance > price * 1.01 else round(price * 1.04, 2)
+        stop = round(support, 2) if support < price * 0.99 else round(price * 0.96, 2)
 
     # --- Risk/Reward ---
     reward = abs(target - price)
@@ -1152,8 +1158,14 @@ def scan_opportunities(existing_tickers=None):
                 action = "WATCH"
                 confidence = "LOW"
 
-            target_price = round(min(resistance, price * 1.08), 2)
+            # Target: next resistance, or 8% upside if already above resistance
+            if resistance > price * 1.01:
+                target_price = round(resistance, 2)
+            else:
+                target_price = round(price * 1.08, 2)
             stop_loss = round(max(support * 0.98, price - 2 * atr), 2)
+            if stop_loss >= price:
+                stop_loss = round(price * 0.95, 2)
             reward = abs(target_price - price)
             risk_amt = abs(price - stop_loss)
             rr = round(reward / risk_amt, 1) if risk_amt > 0 else 0
