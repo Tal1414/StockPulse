@@ -8,6 +8,7 @@ import AddStockModal from "../components/AddStockModal";
 import { CardSkeleton } from "../components/LoadingSkeleton";
 import { MarketNewsFeed } from "../components/NewsFeed";
 import SectorHeatmap from "../components/SectorHeatmap";
+import SectorAllocation from "../components/SectorAllocation";
 
 const AUTO_REFRESH_INTERVAL = 60000;
 
@@ -126,8 +127,9 @@ export default function Dashboard() {
               <StockCard key={stock.ticker} stock={stock} />
             ))}
           </div>
-          <div className="mt-6">
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
             <SectorHeatmap stocks={stocks} />
+            <SectorAllocation stocks={stocks} />
           </div>
         </>
       )}
