@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, RefreshCw, Pause, Play } from "lucide-react";
 import { api } from "../lib/api";
 import { usePortfolioContext } from "../hooks/PortfolioContext";
@@ -19,25 +19,35 @@ export default function Dashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
   const intervalRef = useRef(null);
+  const loadIdRef = useRef(0); // prevent race conditions
 
-  const loadStockData = useCallback(async (tickerList, silent = false) => {
+  const loadStockData = async (tickerList, silent = false) => {
     if (!tickerList.length) {
       setStocks([]);
       setLoading(false);
       return;
     }
+
+    const loadId = ++loadIdRef.current;
     if (!silent) setLoading(true);
+
     const results = await Promise.allSettled(tickerList.map((t) => api.getStock(t)));
+
+    // Only update if this is still the latest load request
+    if (loadId !== loadIdRef.current) return;
+
     const loaded = results.filter((r) => r.status === "fulfilled" && !r.value.error).map((r) => r.value);
     setStocks(loaded);
     setLoading(false);
     setLastRefresh(new Date());
-  }, []);
+  };
 
+  // Load when tickers change
   useEffect(() => {
     loadStockData(tickers);
-  }, [tickers, loadStockData]);
+  }, [tickers]);
 
+  // Auto-refresh
   useEffect(() => {
     if (autoRefresh && tickers.length) {
       intervalRef.current = setInterval(() => {
@@ -45,11 +55,7 @@ export default function Dashboard() {
       }, AUTO_REFRESH_INTERVAL);
     }
     return () => clearInterval(intervalRef.current);
-  }, [autoRefresh, tickers, loadStockData]);
-
-  const handleAdd = (ticker) => {
-    addTicker(ticker);
-  };
+  }, [autoRefresh, tickers]);
 
   const isEmpty = !loading && tickers.length === 0;
 
@@ -130,7 +136,7 @@ export default function Dashboard() {
         <MarketNewsFeed />
       </div>
 
-      {showAdd && <AddStockModal onAdd={handleAdd} onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddStockModal onAdd={addTicker} onClose={() => setShowAdd(false)} />}
     </div>
   );
 }

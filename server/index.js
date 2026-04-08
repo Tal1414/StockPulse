@@ -265,15 +265,28 @@ app.get("/api/opportunities", async (req, res) => {
 app.get("/api/search", async (req, res) => {
   const q = req.query.q;
   if (!q || q.length < 1) return res.json([]);
-  const cacheKey = `search:${q}`;
+  const cacheKey = `search:${q.toLowerCase()}`;
   const cached = getCached(cacheKey);
   if (cached) return res.json(cached);
 
   try {
-    const data = await runPython(["search", q], 10000);
-    setCache(cacheKey, data);
-    res.json(data);
-  } catch (e) {
+    const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(5000),
+    });
+    const json = await response.json();
+    const results = (json.quotes || [])
+      .filter((q) => ["EQUITY", "ETF", "INDEX"].includes(q.quoteType))
+      .map((q) => ({
+        symbol: q.symbol,
+        name: q.shortname || q.longname || "",
+        exchange: q.exchange || "",
+        type: q.quoteType || "",
+      }));
+    setCache(cacheKey, results);
+    res.json(results);
+  } catch {
     res.json([]);
   }
 });
