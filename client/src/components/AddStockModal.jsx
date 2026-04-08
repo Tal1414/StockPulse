@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Plus, Check } from "lucide-react";
+import { X, Check } from "lucide-react";
 import StockSearch from "./StockSearch";
 
 export default function AddStockModal({ onAdd, onClose }) {
@@ -13,8 +13,14 @@ export default function AddStockModal({ onAdd, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-bg-card border border-border rounded-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onMouseDown={(e) => {
+        // Only close if clicking the backdrop itself, not children
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-bg-card border border-border rounded-xl p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Add Stocks</h3>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary p-1">
