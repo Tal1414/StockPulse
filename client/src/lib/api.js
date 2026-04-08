@@ -36,6 +36,8 @@ export const api = {
 
   // Market
   getMarketSummary: () => fetchJSON(`${API}/market/summary`),
+  getMarketRegime: () => fetchJSON(`${API}/market/regime`),
+  getTopSignals: (tickers = []) => fetchJSON(`${API}/signals?tickers=${tickers.join(",")}`),
   getMarketNews: () => fetchJSON(`${API}/market/news`),
   getStockNews: (ticker) => fetchJSON(`${API}/stock/${ticker}/news`),
 

@@ -9,6 +9,8 @@ import { CardSkeleton } from "../components/LoadingSkeleton";
 import { MarketNewsFeed } from "../components/NewsFeed";
 import SectorHeatmap from "../components/SectorHeatmap";
 import SectorAllocation from "../components/SectorAllocation";
+import MarketRegime from "../components/MarketRegime";
+import TopSignals from "../components/TopSignals";
 
 const AUTO_REFRESH_INTERVAL = 60000;
 
@@ -62,6 +64,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      <MarketRegime />
       <MarketBar />
 
       <div className="flex items-center justify-between mb-6">
@@ -127,7 +130,10 @@ export default function Dashboard() {
               <StockCard key={stock.ticker} stock={stock} />
             ))}
           </div>
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+          <div className="mt-6">
+            <TopSignals />
+          </div>
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
             <SectorHeatmap stocks={stocks} />
             <SectorAllocation stocks={stocks} />
           </div>

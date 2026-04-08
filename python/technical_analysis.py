@@ -776,6 +776,220 @@ def generate_recommendation(data):
     }
 
 
+def get_market_regime():
+    """Analyze overall market conditions - is it safe to be long?"""
+    try:
+        # S&P 500 technical state
+        sp = yf.Ticker("^GSPC")
+        sp_hist = sp.history(period="1y")
+        sp_closes = sp_hist["Close"].values.astype(float)
+        sp_price = float(sp_closes[-1])
+        sp_sma_20 = float(np.mean(sp_closes[-20:]))
+        sp_sma_50 = float(np.mean(sp_closes[-50:]))
+        sp_sma_200 = float(np.mean(sp_closes[-200:])) if len(sp_closes) >= 200 else sp_price
+        sp_rsi = compute_rsi(sp_closes.tolist())
+        sp_high = float(np.max(sp_closes))
+        sp_low = float(np.min(sp_closes))
+        sp_pct_from_high = round((sp_price - sp_high) / sp_high * 100, 2)
+
+        # 5-day, 1-month, 3-month returns
+        ret_5d = round((sp_price / float(sp_closes[-5]) - 1) * 100, 2) if len(sp_closes) >= 5 else 0
+        ret_1m = round((sp_price / float(sp_closes[-21]) - 1) * 100, 2) if len(sp_closes) >= 21 else 0
+        ret_3m = round((sp_price / float(sp_closes[-63]) - 1) * 100, 2) if len(sp_closes) >= 63 else 0
+
+        # VIX
+        vix_price = 20.0
+        vix_sma = 20.0
+        try:
+            import time
+            time.sleep(0.5)  # Brief pause to avoid rate limit
+            vix = yf.Ticker("^VIX")
+            vix_hist = vix.history(period="1mo")
+            if len(vix_hist) > 0:
+                vix_price = float(vix_hist["Close"].iloc[-1])
+                vix_sma = float(np.mean(vix_hist["Close"].values[-10:])) if len(vix_hist) >= 10 else vix_price
+        except Exception:
+            pass  # Use defaults
+
+        # Market breadth proxy: how many of top 20 stocks are above their SMA 50
+        breadth_stocks = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "V", "JNJ",
+                          "WMT", "PG", "UNH", "HD", "MA", "DIS", "NFLX", "ADBE", "CRM", "PYPL"]
+        above_sma50 = 0
+        checked = 0
+        for sym in breadth_stocks:
+            try:
+                t = yf.Ticker(sym)
+                h = t.history(period="3mo")
+                if len(h) >= 50:
+                    c = h["Close"].values.astype(float)
+                    if c[-1] > float(np.mean(c[-50:])):
+                        above_sma50 += 1
+                    checked += 1
+            except Exception:
+                continue
+        breadth_pct = round((above_sma50 / checked) * 100) if checked > 0 else 50
+
+        # Score the regime
+        regime_score = 0
+
+        # Trend
+        if sp_price > sp_sma_200:
+            regime_score += 2
+        else:
+            regime_score -= 2
+        if sp_price > sp_sma_50:
+            regime_score += 1
+        else:
+            regime_score -= 1
+        if sp_sma_50 > sp_sma_200:
+            regime_score += 1
+        else:
+            regime_score -= 1
+
+        # Momentum
+        if ret_1m > 2:
+            regime_score += 1
+        elif ret_1m < -2:
+            regime_score -= 1
+        if ret_3m > 5:
+            regime_score += 1
+        elif ret_3m < -5:
+            regime_score -= 1
+
+        # VIX (fear gauge)
+        if vix_price < 15:
+            regime_score += 1  # Low fear
+        elif vix_price > 25:
+            regime_score -= 1  # Elevated fear
+        if vix_price > 30:
+            regime_score -= 1  # High fear
+
+        # Breadth
+        if breadth_pct > 70:
+            regime_score += 1
+        elif breadth_pct < 30:
+            regime_score -= 1
+
+        # RSI
+        if sp_rsi > 70:
+            regime_score -= 0.5  # Overextended
+        elif sp_rsi < 30:
+            regime_score += 0.5  # Oversold bounce likely
+
+        # Determine regime
+        if regime_score >= 4:
+            regime = "STRONG BULL"
+            description = "Market in strong uptrend. Favorable conditions for long positions."
+            color = "gain"
+        elif regime_score >= 2:
+            regime = "BULL"
+            description = "Market trending higher. Look for pullback entries in strong stocks."
+            color = "gain"
+        elif regime_score >= 0:
+            regime = "NEUTRAL"
+            description = "Mixed signals. Be selective, reduce position sizes."
+            color = "warn"
+        elif regime_score >= -2:
+            regime = "BEAR"
+            description = "Market weakening. Favor defensive positions, tighten stops."
+            color = "loss"
+        else:
+            regime = "STRONG BEAR"
+            description = "Market in downtrend. Capital preservation is priority. Cash is a position."
+            color = "loss"
+
+        return {
+            "regime": regime,
+            "regime_score": round(regime_score, 1),
+            "description": description,
+            "color": color,
+            "sp500": {
+                "price": round(sp_price, 2),
+                "sma_50": round(sp_sma_50, 2),
+                "sma_200": round(sp_sma_200, 2),
+                "rsi": sp_rsi,
+                "pct_from_high": sp_pct_from_high,
+                "return_5d": ret_5d,
+                "return_1m": ret_1m,
+                "return_3m": ret_3m,
+            },
+            "vix": {
+                "price": round(vix_price, 2),
+                "sma_10": round(vix_sma, 2),
+                "level": "LOW" if vix_price < 15 else "ELEVATED" if vix_price < 25 else "HIGH" if vix_price < 30 else "EXTREME",
+            },
+            "breadth": {
+                "above_sma50_pct": breadth_pct,
+                "interpretation": "Strong" if breadth_pct > 70 else "Healthy" if breadth_pct > 50 else "Weak" if breadth_pct > 30 else "Very Weak",
+            },
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_top_signals(tickers):
+    """Scan portfolio stocks and return the strongest actionable signals right now."""
+    signals = []
+    for sym in tickers:
+        try:
+            data = analyze(sym)
+            if "error" in data:
+                continue
+
+            rec = generate_recommendation(data)
+
+            # Calculate confluence - how many indicators agree
+            bullish = 0
+            bearish = 0
+            for s in data.get("signals", []):
+                sl = s.lower()
+                if any(w in sl for w in ["oversold", "bullish", "above", "golden", "rising"]):
+                    bullish += 1
+                elif any(w in sl for w in ["overbought", "bearish", "below", "death", "falling"]):
+                    bearish += 1
+            total_signals = bullish + bearish
+            confluence = round(max(bullish, bearish) / total_signals * 100) if total_signals > 0 else 50
+
+            # Check earnings proximity
+            try:
+                cal = get_calendar(sym)
+                earnings_soon = False
+                for ev in cal.get("events", []):
+                    if ev["type"] == "earnings":
+                        days = (datetime.strptime(ev["date"], "%Y-%m-%d") - datetime.now()).days
+                        if 0 <= days <= 14:
+                            earnings_soon = True
+                            break
+            except:
+                earnings_soon = False
+
+            signals.append({
+                "ticker": sym,
+                "company_name": data.get("company_name", sym),
+                "price": data["price"],
+                "daily_change_pct": data["daily_change_pct"],
+                "action": rec["action"],
+                "confidence": rec["confidence"],
+                "score": rec["score"],
+                "target_price": rec["target_price"],
+                "stop_loss": rec["stop_loss"],
+                "risk_reward_ratio": rec["risk_reward_ratio"],
+                "trend": data["trend"],
+                "rsi": data["rsi_14"],
+                "confluence_pct": confluence,
+                "bullish_count": bullish,
+                "bearish_count": bearish,
+                "earnings_soon": earnings_soon,
+                "top_reasons": (rec["catalysts"] if rec["action"] != "SELL" else rec["risks"])[:3],
+            })
+        except:
+            continue
+
+    # Sort by absolute score (strongest signals first)
+    signals.sort(key=lambda x: abs(x["score"]), reverse=True)
+    return signals
+
+
 def scan_opportunities(existing_tickers=None):
     """Scan for investment opportunities with full technical analysis."""
     if existing_tickers is None:
@@ -783,10 +997,26 @@ def scan_opportunities(existing_tickers=None):
     existing_upper = [t.upper() for t in existing_tickers]
 
     scan_list = [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "JPM", "V", "JNJ",
-        "WMT", "PG", "MA", "UNH", "HD", "DIS", "NFLX", "ADBE", "CRM", "PYPL",
-        "AMD", "INTC", "BA", "GS", "CAT", "NKE", "COST", "ABBV", "PFE", "MRK",
-        "XOM", "CVX", "LLY", "AVGO", "ORCL", "CSCO", "ACN", "TXN", "QCOM", "LOW",
+        # Mega Cap Tech
+        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+        # Financials
+        "JPM", "V", "MA", "GS", "BAC", "WFC", "MS", "BLK", "AXP", "C",
+        # Healthcare
+        "JNJ", "UNH", "LLY", "ABBV", "PFE", "MRK", "TMO", "ABT", "AMGN", "MDT",
+        # Consumer
+        "WMT", "PG", "COST", "HD", "NKE", "MCD", "SBUX", "TGT", "LOW", "CL",
+        # Tech / Semis
+        "AMD", "INTC", "AVGO", "QCOM", "TXN", "AMAT", "LRCX", "MU", "MRVL", "KLAC",
+        # Software / Cloud
+        "ADBE", "CRM", "NFLX", "ORCL", "CSCO", "ACN", "NOW", "INTU", "SNOW", "PANW",
+        # Energy
+        "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL",
+        # Industrials
+        "BA", "CAT", "GE", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "FDX",
+        # Media / Comm
+        "DIS", "CMCSA", "PYPL", "T", "VZ", "TMUS", "ATVI", "EA", "ROKU", "SPOT",
+        # Other
+        "BRK-B", "SPY", "QQQ",
     ]
 
     opportunities = []
@@ -1205,6 +1435,15 @@ if __name__ == "__main__":
         else:
             result = generate_recommendation(data)
             print(json.dumps(result))
+
+    elif command == "regime":
+        result = get_market_regime()
+        print(json.dumps(result))
+
+    elif command == "signals":
+        tickers = sys.argv[2].split(",") if len(sys.argv) > 2 and sys.argv[2] else []
+        result = get_top_signals(tickers)
+        print(json.dumps(result))
 
     elif command == "news":
         ticker = sys.argv[2] if len(sys.argv) > 2 else None

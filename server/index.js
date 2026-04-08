@@ -203,6 +203,36 @@ app.get("/api/stock/:ticker/ai", async (req, res) => {
   }
 });
 
+// --- Market Regime ---
+app.get("/api/market/regime", async (req, res) => {
+  const cached = getCached("market:regime");
+  if (cached) return res.json(cached);
+
+  try {
+    const data = await runPython(["regime"], 120000);
+    setCache("market:regime", data);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Top Signals ---
+app.get("/api/signals", async (req, res) => {
+  const tickers = req.query.tickers || "";
+  const cacheKey = `signals:${tickers}`;
+  const cached = getCached(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const data = await runPython(["signals", tickers], 180000);
+    setCache(cacheKey, data);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- Market Summary ---
 app.get("/api/market/summary", async (req, res) => {
   const cached = getCached("market:summary");
